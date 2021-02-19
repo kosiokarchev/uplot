@@ -71,16 +71,16 @@ class GaussianCorner(AbstractGaussianCorner[plt.Axes], Corner):
     def _get_y(x):
         return scipy.stats.norm.pdf(x)
 
-    __x = np.linspace(-3, 3)
+    __x = np.linspace(-5, 5)
     __y = _get_y.__func__(__x)
 
-    def _draw_hist(self, m, v, **kwargs):
+    def _draw_hist(self, m, v, _options=frozendict(), **options):
         scale = np.sqrt(v)
-        return plt.Line2D(m + scale * self._x, self._y / scale, **kwargs)
+        return plt.Line2D(m + scale * self._x, self._y / scale, **{**options, **_options})
     
-    def _draw_contour(self, x, y, w=1., h=1., angle=0., levels=(1.,), level_kwargs=(frozendict(),), **kwargs):
+    def _draw_contour(self, x, y, w=1., h=1., angle=0., levels=(1.,), level_kwargs=(frozendict(),), _options=frozendict(), **options):
         return PatchCollection([
-            Ellipse((x, y), * 2*level*np.array((w, h)), np.rad2deg(angle), **{**kwargs, **lkwargs})
+            Ellipse((x, y), * 2*level*np.array((w, h)), np.rad2deg(angle), **{**options, **_options, **lkwargs})
             for level, lkwargs in zip(levels, level_kwargs)
         ], match_original=True)
 

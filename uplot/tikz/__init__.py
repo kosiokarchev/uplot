@@ -8,7 +8,6 @@ import numpy as np
 from frozendict import frozendict
 
 from ..corner.abstractcorner import AbstractAxis, AbstractCorner, AbstractGaussianCorner
-from ..utils import vfloat
 
 
 class Orderable:
@@ -27,6 +26,13 @@ class Printable(Orderable):
         return None
 
     @property
+    def body(self):
+        return ('\t' + c
+                for ch in sorted(self.children, key=self._sort_key)
+                for c in (ch.print() if isinstance(ch, Printable)
+                          else str(ch).split('\n')))
+
+    @property
     def footer(self) -> tp.Optional[str]:
         return None
 
@@ -37,9 +43,7 @@ class Printable(Orderable):
     def print(self) -> tp.Iterable[str]:
         return filter(partial(is_not, None), chain(
             (self.header,),
-            ('\t' + c
-             for ch in sorted(self.children, key=self._sort_key)
-             for c in (ch.print() if isinstance(ch, Printable) else str(ch).split('\n'))),
+            self.body,
             (self.footer,)
         ))
 
@@ -48,6 +52,9 @@ class Printable(Orderable):
 
 
 class Optionable:
+    no_output = object()
+    defaults = {}
+
     _OptionsType = tp.Union[tp.MutableMapping[str, tp.Union[str, tp.Any]], tp.Iterable[str]]
 
     def __init__(self, *args, options: _OptionsType = None, additional_options='', **kwargs):
@@ -71,11 +78,13 @@ class Optionable:
     def optional(arg: str):
         return arg and f'[{arg}]'
 
-    @staticmethod
-    def format_options(options: str = None, **kwoptions: str):
-        return ', '.join(filter(bool, (', '.join(f'{key}={{{val}}}' if val is not None else key
-                                                 for key, val in kwoptions.items()),
-                                       options)))
+    @classmethod
+    def format_options(cls, additional_options: str = None, **options: str):
+        return ', '.join(filter(bool, (
+            ', '.join(f'{key}={{{val}}}' if val is not None else key
+                      for key, val in options.items()
+                      if val not in (Optionable.no_output, cls.defaults.get(key, Optionable.no_output))),
+            additional_options)))
 
     @property
     def formatted_options(self):
@@ -135,14 +144,22 @@ class AddplotExpression(AddplotCommand):
 
 # TODO: This has so much potential!
 class AddplotCoordinates(AddplotCommand):
+    num_fmt = '.4g'
+
     def __init__(self, points: tp.Union[tp.Iterable[tp.Iterable[tp.Tuple[float, float]]], np.ndarray], coordsys=None, *args, **kwargs):
         coordsys = f'{coordsys}:' if coordsys else ''
+        points = np.array(points)
         super().__init__(' coordinates {{{}}}'.format(
-            '\n'.join(' '.join(f'({coordsys}{p[0]}, {p[0]})' for p in ch) for ch in np.atleast_3d(points))),
+            '\n'.join(' '.join(f'({coordsys}{", ".join(format(_p, self.num_fmt) for _p in p)})' for p in ch)
+                      for ch in (points if points.ndim == 3 else [points]))),
             *args, **kwargs)
 
 
-class PGFAbstractAxis(Optionable, AbstractAxis):
+class PGFAbstractAxis(Optionable, Printable, AbstractAxis):
+    defaults = {**Optionable.defaults, **{
+        'xmode': 'linear', 'ymode': 'linear'
+    }}
+
     def set_xlim(self, xmin=None, xmax=None):
         self._set_options(xmin=xmin, xmax=xmax)
 
@@ -187,11 +204,11 @@ class PGFCorner(AbstractCorner[PGFAxisInGroup], PGFGroupplot):
         ax.options['ylabel'] = label
 
     def _draw_truth_diag(self, ax, truth, **kwargs):
-        ax.children.append(AxvlineCommand(truth, options={**self.truth_options, **kwargs}))
+        ax.children.append(AxvlineCommand(truth, options={**self.truth_options, **kwargs}, zorder=100))
 
     def _draw_truth_offdiag(self, ax, truth_x, truth_y, **kwargs):
-        ax.children.extend((AxvlineCommand(truth_x, options={**self.truth_options, **kwargs}),
-                            AxhlineCommand(truth_y, options={**self.truth_options, **kwargs})))
+        ax.children.extend((AxvlineCommand(truth_x, options={**self.truth_options, **kwargs}, zorder=100),
+                            AxhlineCommand(truth_y, options={**self.truth_options, **kwargs}, zorder=100)))
 
 
     def __init__(self, ndim=None, names=None, truths=None, labels=None,
@@ -210,7 +227,7 @@ class PGFCorner(AbstractCorner[PGFAxisInGroup], PGFGroupplot):
                                      (i > j) and offdiag_args or '')
         for ax in self.iter_diag:
             ax.options['ymajorticks'] = 'false'
-        self.children = self.axs.flat
+        self.children = self.axs.reshape(-1)
 
         self.options['tight layout'] = ndim
         self.options['corner'] = None
@@ -226,15 +243,15 @@ class PGFGaussianCorner(AbstractGaussianCorner[PGFAxisInGroup], PGFCorner):
     def _num_fmt(self, num):
         return self.num_fmt.format(num)
 
-    def _draw_hist(self, m, v, **kwargs):
+    def _draw_hist(self, m, v, _options=frozendict(), **options):
         return AddplotExpression(f'exp(-(x-{self._num_fmt(m)})^2 / 2 / {self._num_fmt(v)}) / {self._num_fmt(v**0.5)}',
-                                 options=kwargs)
+                                 options={**options, **_options})
 
     def _draw_contour(self, x, y, a=1., b=1., c=0.,
                       levels=(1,), level_kwargs: EllipseCommand._LevelKwargsType = (frozendict(),),
-                      zorder=0, **kwargs: Optionable._OptionsType):
+                      _options=frozendict(), zorder=0, **options: Optionable._OptionsType):
         return EllipseCommand(*map(self._num_fmt, (x, y, a, b, c)),
-                              levels=levels, level_kwargs=level_kwargs, options=kwargs, zorder=zorder)
+                              levels=levels, level_kwargs=level_kwargs, options={**options, **_options}, zorder=zorder)
 
     _get_ellipse_args = AbstractGaussianCorner._get_cov_elements
 

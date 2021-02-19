@@ -5,15 +5,16 @@ from operator import attrgetter, is_not
 from typing import Iterable
 
 import numpy as np
-from matplotlib import pyplot as plt
+# from matplotlib import pyplot as plt
+from matplotlib.axes import Axes
 from matplotlib.axis import Ticker
-from matplotlib.ticker import Formatter, Locator
+from matplotlib.ticker import AutoLocator, Formatter, Locator, NullFormatter
 from more_itertools import consume
 
 
-def unshare(ax: plt.Axes, axis: tp.Literal['x', 'y', 'xy'] = 'xy',
-            locator: tp.Union[tp.Type[Locator], Locator] = plt.AutoLocator,
-            formatter: tp.Union[tp.Type[Formatter], Formatter] = plt.NullFormatter):
+def unshare(ax: Axes, axis: tp.Literal['x', 'y', 'xy'] = 'xy',
+            locator: tp.Union[tp.Type[Locator], Locator] = AutoLocator,
+            formatter: tp.Union[tp.Type[Formatter], Formatter] = NullFormatter):
     for xy in axis:
         grouper = getattr(ax, f'get_shared_{xy}_axes')()
         axis = getattr(ax, f'{xy}axis')

@@ -105,7 +105,7 @@ class AbstractCorner(ABC, tp.Generic[_AxisType]):
 
     @property
     def iter_all(self) -> tp.Iterable[_AxisType]:
-        yield from map(itemgetter(-1), self.enum_offdiag)
+        yield from map(itemgetter(-1), self.enum_all)
 
 
 class AbstractGaussianCorner(AbstractCorner[_AxisType], ABC):
@@ -120,13 +120,13 @@ class AbstractGaussianCorner(AbstractCorner[_AxisType], ABC):
         return np.reshape(arr, (len(arr), -1))
 
     @abstractmethod
-    def _draw_hist(self, m: float, v: float, **kwargs):
+    def _draw_hist(self, m: float, v: float, _options=frozendict(), **options):
         raise NotImplementedError()
 
     @abstractmethod
     def _draw_contour(self, x: float, y: float, *args,
                       levels: tp.Iterable[float] = (1.,), level_kwargs: tp.Iterable[tp.Mapping[str, tp.Any]] = (frozendict(),),
-                      **kwargs):
+                      _options=frozendict(), **options):
         raise NotImplementedError()
 
     def _get_cov_elements(self, cov):
@@ -142,42 +142,46 @@ class AbstractGaussianCorner(AbstractCorner[_AxisType], ABC):
 
     def draw(self, mean: np.ndarray, cov: np.ndarray, lims=None,
              sigma_levels: tp.Tuple[float] = (3, 2, 1),
-             hist1d_kwargs=frozendict(), contour_kwargs=frozendict(),
-             contour_level_kwargs: tp.Tuple[tp.Mapping] = None,
-             batch_at_front=True, lims_nsigma=3., lims_pad_fraction=0.02, **kwargs):
+             hist1d_options=frozendict(), contour_options=frozendict(), _options: tp.Tuple[tp.Mapping] = ({},),
+             contour_level_options: tp.Tuple[tp.Mapping] = None,
+             batch_at_front=True, lims_nsigma=3., lims_pad_fraction=0.02,
+             lims_collapse_functions: tp.Tuple[tp.Callable[[np.ndarray], np.ndarray], tp.Callable[[np.ndarray], np.ndarray]] = (np.min, np.max),
+             **extra_options):
         if batch_at_front:
             mean, cov = _move_batch_vec(mean), _move_batch_mat(cov)
 
         if lims is None:
             lims = np.stack([
                 f(a.reshape(len(a), -1), axis=-1)
-                for f, a in zip((np.min, np.max),
+                for f, a in zip(lims_collapse_functions,
                                 np.moveaxis(mean[..., None] + np.sqrt(np.moveaxis(cov.diagonal(), -1, 0))[..., None] * (-1, 1) * lims_nsigma, -1, 0))
             ], -1)
             lims += np.diff(lims, axis=-1) * (-1, 1) * lims_pad_fraction
 
         nbatch = mean.ndim - 1
-        sigma_levels, contour_level_kwargs = (
+        sigma_levels, contour_level_options = (
             _to_nd_obj_array(np.array(arr), nbatch - 1)
             for arr in
-        (sigma_levels, contour_level_kwargs if contour_level_kwargs is not None else len(sigma_levels) * ({},))
+            (sigma_levels, contour_level_options if contour_level_options is not None else len(sigma_levels) * ({},))
         )
-        hist1d_kwargs, contour_kwargs, kwargs = (
+        _options = _to_nd_obj_array(np.array(_options), nbatch)
+        hist1d_options, contour_options, extra_options = (
             {key: _to_nd_obj_array(np.array(val), nbatch) for key, val in d.items()}
-            for d in (hist1d_kwargs, contour_kwargs, kwargs))
+            for d in (hist1d_options, contour_options, extra_options))
 
         self._draw(zip(chain(self.iter_diag, self.iter_offdiag),
-                   chain(self._1d_iter(self.draw_hist(mean, _move_batch_vec(np.diagonal(cov)), **{**kwargs, **hist1d_kwargs})),
-                         self._1d_iter(self.draw_contour(
+                       chain(self._1d_iter(self.draw_hist(mean, _move_batch_vec(np.diagonal(cov)), _options=_options, **{**extra_options, **hist1d_options})),
+                             self._1d_iter(self.draw_contour(
                              *mean[self.idxl[::-1]], *self._get_ellipse_args(cov),
-                             sigma_levels, contour_level_kwargs, **{**kwargs, **contour_kwargs})))))
+                             sigma_levels, contour_level_options, _options=_options, **{**extra_options, **contour_options})))))
 
-        for (i, j), ax in self.enum_all:
-            ax.set_xlim(*lims[j])
-            if i > j:
-                ax.set_ylim(*lims[i])
-            else:
-                ax.autoscale(axis='y')
-                ax.set_ylim(0, None)
+        if lims is not False:
+            for (i, j), ax in self.enum_all:
+                ax.set_xlim(*lims[j])
+                if i > j:
+                    ax.set_ylim(*lims[i])
+                else:
+                    ax.autoscale(axis='y')
+                    ax.set_ylim(0, None)
 
         return self

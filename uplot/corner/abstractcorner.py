@@ -172,8 +172,8 @@ class AbstractGaussianCorner(AbstractCorner[_AxisType], ABC):
         self._draw(zip(chain(self.iter_diag, self.iter_offdiag),
                        chain(self._1d_iter(self.draw_hist(mean, _move_batch_vec(np.diagonal(cov)), _options=_options, **{**extra_options, **hist1d_options})),
                              self._1d_iter(self.draw_contour(
-                             *mean[self.idxl[::-1]], *self._get_ellipse_args(cov),
-                             sigma_levels, contour_level_options, _options=_options, **{**extra_options, **contour_options})))))
+                                 *mean[self.idxl[::-1]], *self._get_ellipse_args(cov),
+                                 sigma_levels, contour_level_options, _options=_options, **{**extra_options, **contour_options})))))
 
         if lims is not False:
             for (i, j), ax in self.enum_all:
